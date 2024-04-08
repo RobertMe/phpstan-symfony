@@ -13,12 +13,16 @@ final class DefaultServiceMap implements ServiceMap
 	/** @var ServiceDefinition[] */
 	private $services;
 
+	/** @var LocatorMap */
+	private $locatorMap;
+
 	/**
 	 * @param ServiceDefinition[] $services
 	 */
-	public function __construct(array $services)
+	public function __construct(array $services, LocatorMap $locatorMap)
 	{
 		$this->services = $services;
+		$this->locatorMap = $locatorMap;
 	}
 
 	/**
@@ -34,10 +38,17 @@ final class DefaultServiceMap implements ServiceMap
 		return $this->services[$id] ?? null;
 	}
 
-	public static function getServiceIdFromNode(Expr $node, Scope $scope): ?string
+	public function getServiceIdFromNode(Expr $node, Scope $scope): ?string
 	{
 		$strings = TypeUtils::getConstantStrings($scope->getType($node));
-		return count($strings) === 1 ? $strings[0]->getValue() : null;
+		$serviceId = count($strings) === 1 ? $strings[0]->getValue() : null;
+		$class = $scope->getClassReflection();
+
+		if ($serviceId === null || $class === null) {
+			return $serviceId;
+		}
+
+		return $this->locatorMap->getServiceId($serviceId, $class->getName());
 	}
 
 }

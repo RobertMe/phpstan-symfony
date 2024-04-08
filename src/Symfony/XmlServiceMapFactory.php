@@ -40,6 +40,10 @@ final class XmlServiceMapFactory implements ServiceMapFactory
 		$services = [];
 		/** @var Service[] $aliases */
 		$aliases = [];
+		/** @var array<string, list<string>> $classesWithLocators */
+		$classesWithLocators = [];
+		$locators = [];
+		$locatorFactories = [];
 		foreach ($xml->services->service as $def) {
 			/** @var SimpleXMLElement $attrs */
 			$attrs = $def->attributes();
@@ -60,6 +64,27 @@ final class XmlServiceMapFactory implements ServiceMapFactory
 			} else {
 				$services[$service->getId()] = $service;
 			}
+
+			if (isset($attrs->class)) {
+				$usingLocators = $this->findLocators($def);
+				if ($usingLocators !== []) {
+					$classesWithLocators[(string) $attrs->class] = $usingLocators;
+				}
+			}
+
+			if ((string) $attrs->class === 'Symfony\Component\DependencyInjection\ServiceLocator') {
+				$serviceMap = [];
+
+				if (isset($def->factory)) {
+					$locatorFactories[(string) $attrs->id] = (string) $def->factory->attributes()->service;
+				} elseif ($def->argument->argument !== null) {
+					foreach ($def->argument->argument as $argument) {
+						$argAttrs = $argument->attributes();
+						$serviceMap[(string) $argAttrs->key] = [(string) $argAttrs->id];
+					}
+					$locators[(string) $attrs->id] = new Locator($serviceMap);
+				}
+			}
 		}
 		foreach ($aliases as $service) {
 			$alias = $service->getAlias();
@@ -76,7 +101,33 @@ final class XmlServiceMapFactory implements ServiceMapFactory
 			);
 		}
 
-		return new DefaultServiceMap($services);
+		return new DefaultServiceMap($services, LocatorMap::create($classesWithLocators, $locators, $locatorFactories));
+	}
+
+	private function findLocators(SimpleXMLElement $serviceNode): array
+	{
+		$locators = [];
+		foreach ($serviceNode->argument as $argument) {
+			$attrs = $argument->attributes();
+			$id = (string) $attrs->id;
+			if ((string) $attrs->type === 'service' && str_starts_with($id, '.service_locator.')) {
+				$locators[] = $id;
+			}
+		}
+
+		foreach ($serviceNode->call as $call) {
+			if ($call->argument !== null) {
+				foreach ($call->argument as $argument) {
+					$attrs = $argument->attributes();
+					$id = (string) $attrs->id;
+					if ((string) $attrs->type === 'service' && str_starts_with($id, '.service_locator.')) {
+						$locators[] = $id;
+					}
+				}
+			}
+		}
+
+		return $locators;
 	}
 
 }
